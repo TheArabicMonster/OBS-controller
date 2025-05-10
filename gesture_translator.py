@@ -60,13 +60,13 @@ def detect_gesture(landmarks):
         # On garde les 5 dernières positions
         if len(gesture_history['swipe_x']) > 5:
             gesture_history['swipe_x'].pop(0)
-            gesture_history['swipe_t'].pop(0)
-              # Si la main a glissé de droite à gauche
+            gesture_history['swipe_t'].pop(0)        # Si la main a glissé de droite à gauche
         if len(gesture_history['swipe_x']) == 5:
             dx = gesture_history['swipe_x'][0] - gesture_history['swipe_x'][-1]
             dt = gesture_history['swipe_t'][-1] - gesture_history['swipe_t'][0]
             speed = abs(dx / dt) if dt > 0 else 0
-            direction = "DROITE->GAUCHE" if dx > 0 else "GAUCHE->DROITE"            # Détection du swipe dans les deux directions
+            direction = "DROITE->GAUCHE" if dx > 0 else "GAUCHE->DROITE"
+            # Détection du swipe dans les deux directions
             if dt < 1.0 and speed > 0.5:  # Timing et vitesse minimale requis
                 if dx > 0.30:  # Droite vers gauche (dx positif)
                     print(f"Swipe {direction} détecté")
@@ -81,28 +81,44 @@ def detect_gesture(landmarks):
         return "OPEN_HAND"
     else:
         gesture_history['swipe_x'].clear()
-        gesture_history['swipe_t'].clear()
-
-    # Critères plus stricts pour le pouce levé :
-    # 1. Le pouce doit être clairement au-dessus des autres doigts
-    # 2. Les autres doigts doivent être clairement repliés (bien plus bas)
-    # 3. Le pouce doit être orienté vers le haut (y vraiment plus petit)
+        gesture_history['swipe_t'].clear()    # Critères précis pour le pouce levé :
+    # 1. Le pouce doit être vertical (orientation vers le haut)
+    # 2. Le pouce doit être au-dessus des autres doigts
+    # 3. Les autres doigts doivent être fermés et horizontaux
+    
     thumb_mcp = landmarks.landmark[mp_hands.HandLandmark.THUMB_MCP]
-      # Calcul de l'orientation du pouce - plus souple
-    thumb_vertical = (thumb_tip.y < thumb_ip.y)  # Pouce orienté vers le haut
     
-    # Vérification que le pouce est au-dessus des autres doigts - seuil plus bas
-    thumb_clearly_up = thumb_tip.y < index_mcp.y - 0.05  # Réduit à 5% au lieu de 10%
+    # 1. Vérification que le pouce est vertical (différence Y significative)
+    thumb_vertical_degree = abs(thumb_tip.y - thumb_ip.y) > 0.04
     
-    # Vérification que les autres doigts sont repliés - critère plus souple
-    fingers_clearly_down = (
-        index_tip.y > index_mcp.y and
-        middle_tip.y > middle_mcp.y and
-        ring_tip.y > ring_mcp.y and
-        pinky_tip.y > pinky_mcp.y
+    # 2. Vérification que le pouce est clairement au-dessus des autres doigts
+    thumb_above_fingers = (
+        thumb_tip.y < index_tip.y and 
+        thumb_tip.y < middle_tip.y and
+        thumb_tip.y < ring_tip.y and
+        thumb_tip.y < pinky_tip.y
     )
     
-    if thumb_vertical and thumb_clearly_up and fingers_clearly_down:
+    # 3. Vérification que les autres doigts sont fermés (horizontaux)
+    # Pour des doigts horizontaux, la différence en Y entre les articulations est faible
+    # et les bouts des doigts ne sont pas plus bas que leurs articulations MCP
+    fingers_horizontal = (
+        # L'index n'est pas vertical (différence Y faible entre PIP et DIP)
+        abs(landmarks.landmark[mp_hands.HandLandmark.INDEX_FINGER_PIP].y - 
+            landmarks.landmark[mp_hands.HandLandmark.INDEX_FINGER_DIP].y) < 0.02 and
+        # Le majeur n'est pas vertical
+        abs(landmarks.landmark[mp_hands.HandLandmark.MIDDLE_FINGER_PIP].y - 
+            landmarks.landmark[mp_hands.HandLandmark.MIDDLE_FINGER_DIP].y) < 0.02 and
+        # L'annulaire n'est pas vertical
+        abs(landmarks.landmark[mp_hands.HandLandmark.RING_FINGER_PIP].y - 
+            landmarks.landmark[mp_hands.HandLandmark.RING_FINGER_DIP].y) < 0.02 and
+        # L'auriculaire n'est pas vertical
+        abs(landmarks.landmark[mp_hands.HandLandmark.PINKY_PIP].y - 
+            landmarks.landmark[mp_hands.HandLandmark.PINKY_DIP].y) < 0.02
+    )
+    
+    if thumb_vertical_degree and thumb_above_fingers and fingers_horizontal:
+        print("THUMB_UP détecté - pouce vertical, doigts horizontaux")
         return "THUMB_UP"
 
     # Signe de paix (index et majeur levés, autres doigts repliés)
