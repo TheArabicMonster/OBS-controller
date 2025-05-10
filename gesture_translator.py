@@ -105,20 +105,19 @@ def detect_gesture(landmarks):
     fingers_horizontal = (
         # L'index n'est pas vertical (différence Y faible entre PIP et DIP)
         abs(landmarks.landmark[mp_hands.HandLandmark.INDEX_FINGER_PIP].y - 
-            landmarks.landmark[mp_hands.HandLandmark.INDEX_FINGER_DIP].y) < 0.02 and
+            landmarks.landmark[mp_hands.HandLandmark.INDEX_FINGER_DIP].y) < 0.03 and
         # Le majeur n'est pas vertical
         abs(landmarks.landmark[mp_hands.HandLandmark.MIDDLE_FINGER_PIP].y - 
-            landmarks.landmark[mp_hands.HandLandmark.MIDDLE_FINGER_DIP].y) < 0.02 and
+            landmarks.landmark[mp_hands.HandLandmark.MIDDLE_FINGER_DIP].y) < 0.03 and
         # L'annulaire n'est pas vertical
         abs(landmarks.landmark[mp_hands.HandLandmark.RING_FINGER_PIP].y - 
-            landmarks.landmark[mp_hands.HandLandmark.RING_FINGER_DIP].y) < 0.02 and
+            landmarks.landmark[mp_hands.HandLandmark.RING_FINGER_DIP].y) < 0.03 and
         # L'auriculaire n'est pas vertical
         abs(landmarks.landmark[mp_hands.HandLandmark.PINKY_PIP].y - 
-            landmarks.landmark[mp_hands.HandLandmark.PINKY_DIP].y) < 0.02
+            landmarks.landmark[mp_hands.HandLandmark.PINKY_DIP].y) < 0.03
     )
     
     if thumb_vertical_degree and thumb_above_fingers and fingers_horizontal:
-        print("THUMB_UP détecté - pouce vertical, doigts horizontaux")
         return "THUMB_UP"
 
     # Signe de paix (index et majeur levés, autres doigts repliés)
@@ -127,7 +126,8 @@ def detect_gesture(landmarks):
         middle_tip.y < middle_mcp.y and
         ring_tip.y > ring_mcp.y and
         pinky_tip.y > pinky_mcp.y and
-        thumb_tip.y > thumb_ip.y
+        thumb_tip.x < index_tip.x and  # Le pouce est orienté vers l'intérieur
+        abs(index_tip.x - middle_tip.x) > 0.03  # Une séparation claire entre l'index et le majeur
     ):
         return "PEACE"
 
