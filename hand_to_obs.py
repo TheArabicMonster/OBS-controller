@@ -2,18 +2,25 @@ import cv2
 import mediapipe as mp
 from obswebsocket import obsws, requests
 import time
+from config import HOST, PORT, PASSWORD, CAMERA_ID, VIDEO_SOURCE_NAME
+from gesture_translator import detect_gesture
+from gesture_handler import handle_gesture
 
-# Paramètres OBS
-host = "localhost"
-port = 4444
-password = ""  # Laissez vide si "Authentication" n'est pas activé, ou mettez le mot de passe exact d'OBS
+# Connexion à OBS
+try:
+    print("Tentative de connexion à OBS...")
+    ws = obsws(HOST, PORT, PASSWORD)
+    ws.connect()
+    print("Connexion à OBS réussie!")
+except Exception as e:
+    print(f"Erreur de connexion à OBS: {e}")
+    print("Le programme continuera sans contrôler OBS.")
+    ws = None
 
-# Paramètre de caméra
-camera_id = 1  # 0=webcam intégrée, 1=webcam externe, 2=autre caméra, etc.
-
-# Paramètres vidéo pour OBS
-video_source_name = "China credit"  # Nom de votre source média dans OBS
-video_path = r"C:\Users\chats\Videos\Social Credit meme.mp4"  # Chemin vers votre fichier vidéo
+# Ouverture de la caméra
+cap = cv2.VideoCapture(CAMERA_ID)
+last_action = 0
+gesture_cooldown = 2  # Secondes entre deux actions
 
 # Initialisation MediaPipe
 mp_hands = mp.solutions.hands
@@ -23,73 +30,6 @@ hands = mp_hands.Hands(
     min_tracking_confidence=0.5    # Seuil de confiance pour le suivi
 )
 mp_draw = mp.solutions.drawing_utils
-
-# Connexion à OBS
-try:
-    print("Tentative de connexion à OBS...")
-    ws = obsws(host, port, password)
-    ws.connect()
-    print("Connexion à OBS réussie!")
-except Exception as e:
-    print(f"Erreur de connexion à OBS: {e}")
-    print("Le programme continuera sans contrôler OBS.")
-    ws = None
-
-# Ouverture de la caméra
-cap = cv2.VideoCapture(camera_id)
-last_action = 0
-gesture_cooldown = 2  # Secondes entre deux actions
-
-# Actions OBS
-def play_video_in_obs():
-    """Lance la lecture d'une vidéo dans OBS en redémarrant la source et s'assurant que l'audio est activé"""
-    if not ws:
-        print("Pas de connexion à OBS")
-        return False
-    
-    try:
-        # Vérifier si la source existe
-        sources = ws.call(requests.GetSourcesList()).getSources()
-        source_exists = any(s['name'] == video_source_name for s in sources)
-        
-        if not source_exists:
-            print(f"Source '{video_source_name}' introuvable dans OBS")
-            return False
-        
-        #  Essayer de redémarrer le média
-        try:
-            print("Tentative de redémarrage du média...")
-            ws.call(requests.RestartMedia(sourceName=video_source_name))
-            print(f"✓ Média '{video_source_name}' redémarré")
-            return True
-        except Exception as e:
-            print(f"Échec du redémarrage: {e}")
-        
-            print("Source non trouvée dans les scènes actives")
-
-    except Exception as e:
-        print(f"Erreur lors de la lecture de la vidéo: {e}")
-        return False
-
-def detect_gesture(landmarks):
-    """Détecte des gestes spécifiques basés sur la position des points de la main"""
-    # Exemple: pouce levé
-    thumb_tip = landmarks.landmark[mp_hands.HandLandmark.THUMB_TIP]
-    index_tip = landmarks.landmark[mp_hands.HandLandmark.INDEX_FINGER_TIP]
-    
-    # Pouce levé - Si le pouce est au-dessus de l'index
-    if thumb_tip.y < index_tip.y:
-        return "THUMB_UP"
-    
-    # Vous pouvez ajouter d'autres gestes ici
-    # Par exemple, index et majeur levés (signe de paix)
-    middle_tip = landmarks.landmark[mp_hands.HandLandmark.MIDDLE_FINGER_TIP]
-    if (index_tip.y < landmarks.landmark[mp_hands.HandLandmark.WRIST].y and 
-        middle_tip.y < landmarks.landmark[mp_hands.HandLandmark.WRIST].y and
-        thumb_tip.y > index_tip.y):
-        return "PEACE"
-    
-    return None
 
 try:
     while cap.isOpened():
@@ -132,22 +72,7 @@ try:
                     gesture_text = f"Geste: {gesture}"
                     
                     # Actions OBS avec délai de refroidissement
-                    current_time = time.time()
-                    if ws and current_time - last_action > gesture_cooldown:
-                        if gesture == "THUMB_UP":
-                            try:
-                                # Au lieu de changer de scène, on lance la vidéo
-                                play_video_in_obs()
-                                print("Action OBS: Lecture vidéo")
-                            except Exception as e:
-                                print(f"Erreur OBS: {e}")
-                        elif gesture == "PEACE":
-                            try:
-                                ws.call(requests.SetCurrentScene("Scene 2"))
-                                print("Action OBS: Changement vers Scene 2")
-                            except Exception as e:
-                                print(f"Erreur OBS: {e}")
-                        last_action = current_time
+                    last_action = handle_gesture(gesture, ws, last_action, gesture_cooldown)
         
         # Affichage du texte sur l'image
         cv2.putText(image, gesture_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
