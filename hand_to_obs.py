@@ -56,44 +56,7 @@ def play_video_in_obs():
             print(f"Source '{video_source_name}' introuvable dans OBS")
             return False
         
-        # S'assurer que l'audio de la source est activé et à un volume correct
-        try:
-            print("Configuration de l'audio...")
-            # Récupérer les paramètres actuels
-            source_settings = ws.call(requests.GetSourceSettings(sourceName=video_source_name)).getSourceSettings()
-            
-            # Vérifier si des paramètres audio existent et les modifier
-            audio_settings = {
-                'muted': False,  # S'assurer que la source n'est pas en sourdine
-                'volume': 1.0,   # Volume à 100%
-            }
-            
-            # Mettre à jour les paramètres si 'muted' existe
-            if 'muted' in source_settings:
-                source_settings['muted'] = False
-            
-            # Mettre à jour le volume si possible
-            if 'volume' in source_settings:
-                source_settings['volume'] = 1.0
-            
-            # Appliquer les paramètres mis à jour
-            ws.call(requests.SetSourceSettings(
-                sourceName=video_source_name,
-                sourceSettings=source_settings
-            ))
-            
-            # Essayer aussi de configurer les paramètres audio spécifiques si disponibles
-            try:
-                ws.call(requests.SetMute(source=video_source_name, mute=False))
-                ws.call(requests.SetVolume(source=video_source_name, volume=1.0))
-                print("Paramètres audio configurés: volume à 100% et source non muette")
-            except Exception as e:
-                print(f"Note: Configuration audio avancée non disponible: {e}")
-                
-        except Exception as e:
-            print(f"Avertissement lors de la configuration audio: {e}")
-        
-        # Stratégie 1: Essayer de redémarrer le média
+        #  Essayer de redémarrer le média
         try:
             print("Tentative de redémarrage du média...")
             ws.call(requests.RestartMedia(sourceName=video_source_name))
@@ -102,70 +65,8 @@ def play_video_in_obs():
         except Exception as e:
             print(f"Échec du redémarrage: {e}")
         
-        # Stratégie 2: Désactiver puis réactiver la source pour forcer le redémarrage
-        try:
-            print("Tentative de réinitialisation par visibilité...")
-            # Récupérer les scènes
-            scenes = ws.call(requests.GetSceneList()).getScenes()
-            
-            # Pour chaque scène, vérifier si notre source est présente
-            for scene in scenes:
-                scene_name = scene['name']
-                
-                # Obtenir les items de la scène
-                scene_items = ws.call(requests.GetSceneItemList(sceneName=scene_name)).getSceneItems()
-                
-                # Trouver notre source dans cette scène
-                for item in scene_items:
-                    if item.get('sourceName') == video_source_name:
-                        print(f"Source trouvée dans la scène: {scene_name}")
-                        
-                        # Récupérer l'ID de l'élément
-                        item_id = item.get('id')
-                        
-                        # Désactiver la source
-                        ws.call(requests.SetSceneItemProperties(
-                            scene=scene_name,
-                            item=item_id,
-                            visible=False
-                        ))
-                        print("Source désactivée")
-                        
-                        # Attendre un court instant
-                        time.sleep(0.5)
-                        
-                        # Réactiver la source pour déclencher le redémarrage
-                        ws.call(requests.SetSceneItemProperties(
-                            scene=scene_name,
-                            item=item_id,
-                            visible=True
-                        ))
-                        print("Source réactivée - la vidéo devrait démarrer")
-                        return True
-            
             print("Source non trouvée dans les scènes actives")
-            
-        except Exception as e:
-            print(f"Échec de la réinitialisation par visibilité: {e}")
-        
-        # Stratégie 3: Essayer de jouer en utilisant la méthode SetSourceSettings
-        try:
-            print("Tentative de lecture via paramètres...")
-            settings = {
-                'playing': True,
-                'restart': True,  # Essayer de forcer le redémarrage
-                'loop': False
-            }
-            ws.call(requests.SetSourceSettings(
-                sourceName=video_source_name,
-                sourceSettings=settings
-            ))
-            print("Paramètres de lecture appliqués")
-        except Exception as e:
-            print(f"Échec de la lecture via paramètres: {e}")
-        
-        return True
-        
+
     except Exception as e:
         print(f"Erreur lors de la lecture de la vidéo: {e}")
         return False
