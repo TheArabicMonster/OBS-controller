@@ -118,17 +118,49 @@ def detect_gesture(landmarks):
     )
     
     if thumb_vertical_degree and thumb_above_fingers and fingers_horizontal:
-        return "THUMB_UP"
-
-    # Signe de paix (index et majeur levés, autres doigts repliés)
-    if (
-        index_tip.y < index_mcp.y and
-        middle_tip.y < middle_mcp.y and
-        ring_tip.y > ring_mcp.y and
-        pinky_tip.y > pinky_mcp.y and
-        thumb_tip.x < index_tip.x and  # Le pouce est orienté vers l'intérieur
-        abs(index_tip.x - middle_tip.x) > 0.03  # Une séparation claire entre l'index et le majeur
-    ):
+        return "THUMB_UP"    # Signe de paix (index et majeur levés en V, autres doigts repliés, pouce derrière la ligne index-poignet)
+    
+    # Vérifier que l'index et le majeur sont clairement levés
+    index_up = index_tip.y < index_mcp.y - 0.05  # Seuil augmenté pour s'assurer que le doigt est bien levé
+    middle_up = middle_tip.y < middle_mcp.y - 0.05
+    
+    # Vérifier que l'annulaire et l'auriculaire sont repliés
+    ring_down = ring_tip.y > ring_mcp.y
+    pinky_down = pinky_tip.y > pinky_mcp.y
+    
+    # Vérifier que les doigts forment un "V" (suffisamment écartés)
+    fingers_v_shape = abs(index_tip.x - middle_tip.x) > 0.05  # Écart minimal entre index et majeur
+    
+    # Points importants pour vérifier la position du pouce par rapport à la ligne poignet-index
+    wrist = landmarks.landmark[mp_hands.HandLandmark.WRIST]  # Point du poignet
+    
+    # Calcul de l'équation de la ligne entre le poignet et la base de l'index (index_mcp)
+    # Équation de ligne: y = mx + b
+    # m = (y2 - y1) / (x2 - x1)
+    # b = y1 - m * x1
+    
+    # Éviter la division par zéro
+    if abs(index_mcp.x - wrist.x) < 0.001:
+        # Ligne verticale, calcul différent
+        line_x = index_mcp.x
+        thumb_behind_line = (thumb_ip.x < line_x) if wrist.x < index_mcp.x else (thumb_ip.x > line_x)
+    else:
+        slope = (index_mcp.y - wrist.y) / (index_mcp.x - wrist.x)
+        intercept = wrist.y - slope * wrist.x
+        
+        # Calcul du côté de la ligne où se trouve le pouce
+        # On calcule y théorique sur la ligne pour le même x que le pouce
+        y_on_line = slope * thumb_ip.x + intercept
+        
+        # Si on est à gauche de la main, le pouce est derrière si y_thumb > y_on_line
+        # Si on est à droite de la main, le pouce est derrière si y_thumb < y_on_line
+        # On peut utiliser index_mcp.x > wrist.x pour savoir si c'est main gauche ou droite
+        if index_mcp.x > wrist.x:  # Main gauche probablement
+            thumb_behind_line = thumb_ip.y > y_on_line
+        else:  # Main droite probablement
+            thumb_behind_line = thumb_ip.y < y_on_line
+    
+    if (index_up and middle_up and ring_down and pinky_down and fingers_v_shape and thumb_behind_line):
         return "PEACE"
 
     # Ajoute ici d'autres gestes personnalisés
