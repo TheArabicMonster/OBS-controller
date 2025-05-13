@@ -1,9 +1,13 @@
+🌍 **Langue / Language** :
+[Français](./README.md) | [English](./README.en.md)
+
 # Reconnaissance de gestes pour contrôle OBS
 
 ## Prérequis
 - Windows
 - OBS Studio avec Websocket activé
 - Python 3.10.9 (impératif, mediapipe ne fonctionne pas avec d'autres versions récentes)
+- Une webcam (btw)
 
 ## Installation
 
