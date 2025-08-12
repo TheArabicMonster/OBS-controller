@@ -14,7 +14,7 @@ gesture_history = {
 # Variables globales pour les landmarks de la main (évite la redondance)
 thumb_tip = None
 thumb_mcp = None
-thumb_pip = None
+thumb_cmc = None
 thumb_ip = None
 index_tip = None
 index_mcp = None
@@ -32,7 +32,7 @@ wrist = None
 
 def _extract_landmarks(landmarks):
     """Extrait tous les landmarks nécessaires et les stocke dans les variables globales"""
-    global thumb_tip, thumb_mcp, thumb_pip, thumb_ip
+    global thumb_tip, thumb_mcp, thumb_cmc, thumb_ip
     global index_tip, index_mcp, index_pip
     global middle_tip, middle_mcp, middle_pip
     global ring_tip, ring_mcp, ring_pip
@@ -41,7 +41,7 @@ def _extract_landmarks(landmarks):
     
     thumb_tip = landmarks.landmark[mp_hands.HandLandmark.THUMB_TIP]
     thumb_mcp = landmarks.landmark[mp_hands.HandLandmark.THUMB_MCP]
-    thumb_pip = landmarks.landmark[mp_hands.HandLandmark.THUMB_PIP]
+    thumb_cmc = landmarks.landmark[mp_hands.HandLandmark.THUMB_CMC]
     thumb_ip = landmarks.landmark[mp_hands.HandLandmark.THUMB_IP]
     
     index_tip = landmarks.landmark[mp_hands.HandLandmark.INDEX_FINGER_TIP]

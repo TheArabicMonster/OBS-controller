@@ -24,13 +24,20 @@ def handle_gesture(gesture, ws, last_action, gesture_cooldown):
         
     elif gesture == "THUMB_UP":
         try:
-            #restart_on_activate rejoue la video si le geste est détecté une seconde fois
-            ws.set_input_settings(VIDEO_SOURCE_NAME, {"restart_on_activate": True}, True)
-
+            # Méthode correcte pour redémarrer/jouer une vidéo
+            ws.trigger_media_input_action(VIDEO_SOURCE_NAME, "OBS_WEBSOCKET_MEDIA_INPUT_ACTION_RESTART")
             print("✓ Action OBS: Lecture vidéo")
             action_taken = True
+            action_description = "Redémarrage de la vidéo"
         except Exception as e:
-            print(f"❌ Erreur OBS (RestartMedia): {e}")
+            try:
+                # Essai avec une action alternative
+                ws.trigger_media_input_action(VIDEO_SOURCE_NAME, "restart")
+                print("✓ Action OBS: Lecture vidéo (restart)")
+                action_taken = True
+                action_description = "Redémarrage de la vidéo"
+            except Exception as e2:
+                print(f"❌ Erreur OBS (RestartMedia): {e2}")
 
     elif gesture == "PEACE":
         print("✌️ Geste de paix détecté. Aucune action OBS.")
