@@ -1,7 +1,6 @@
 import cv2
 import mediapipe as mp
-from obswebsocket import obsws, requests
-import time
+import obsws_python as obs
 from config import HOST, PORT, PASSWORD, CAMERA_ID, VIDEO_SOURCE_NAME
 from gesture_translator import detect_gesture
 from gesture_handler import handle_gesture
@@ -9,8 +8,7 @@ from gesture_handler import handle_gesture
 # Connexion à OBS
 try:
     print("Tentative de connexion à OBS...")
-    ws = obsws(HOST, PORT, PASSWORD)
-    ws.connect()
+    ws = obs.ReqClient(host=HOST, port=PORT, password=PASSWORD)
     print("Connexion à OBS réussie!")
 except Exception as e:
     print(f"Erreur de connexion à OBS: {e}")
@@ -33,27 +31,24 @@ mp_draw = mp.solutions.drawing_utils
 
 try:
     while cap.isOpened():
-        # Lecture de l'image de la caméra
         success, image = cap.read()
         if not success:
             print("Échec de la lecture depuis la caméra.")
             break
 
-        # Flip horizontal pour une expérience de miroir plus naturelle
+        # Flip horizontal de l'image
         image = cv2.flip(image, 1)
         
         # Conversion pour MediaPipe (BGR à RGB)
         image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         image_rgb.flags.writeable = False
         
-        # Traitement de l'image avec MediaPipe
         results = hands.process(image_rgb)
-        
-        # Préparation pour dessiner
+
+        # Convertie l'image de RGB à BGR
         image_rgb.flags.writeable = True
         image = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2BGR)
         
-        # Affichage du geste détecté
         gesture_text = "Aucun geste"
         
         # Analyse des résultats de détection de la main
@@ -71,10 +66,10 @@ try:
                 if gesture:
                     gesture_text = f"Geste: {gesture}"
                     
-                    # Actions OBS avec délai de refroidissement
+                    # Exécute action et met à jour timestamp anti-spam
                     last_action = handle_gesture(gesture, ws, last_action, gesture_cooldown)
         
-        # Affichage du texte sur l'image
+        # Affichage du geste sur l'image
         cv2.putText(image, gesture_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
         
         # Affichage de l'image

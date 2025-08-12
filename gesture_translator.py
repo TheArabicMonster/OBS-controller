@@ -1,7 +1,7 @@
 # gesture_translator.py
 import mediapipe as mp
 import time
-import config # Added import
+import config
 
 mp_hands = mp.solutions.hands
 
@@ -11,62 +11,137 @@ gesture_history = {
     'swipe_t': []
 }
 
+# Variables globales pour les landmarks de la main (évite la redondance)
+thumb_tip = None
+thumb_mcp = None
+thumb_pip = None
+thumb_ip = None
+index_tip = None
+index_mcp = None
+index_pip = None
+middle_tip = None
+middle_mcp = None
+middle_pip = None
+ring_tip = None
+ring_mcp = None
+ring_pip = None
+pinky_tip = None
+pinky_mcp = None
+pinky_pip = None
+wrist = None
+
+def _extract_landmarks(landmarks):
+    """Extrait tous les landmarks nécessaires et les stocke dans les variables globales"""
+    global thumb_tip, thumb_mcp, thumb_pip, thumb_ip
+    global index_tip, index_mcp, index_pip
+    global middle_tip, middle_mcp, middle_pip
+    global ring_tip, ring_mcp, ring_pip
+    global pinky_tip, pinky_mcp, pinky_pip
+    global wrist
+    
+    thumb_tip = landmarks.landmark[mp_hands.HandLandmark.THUMB_TIP]
+    thumb_mcp = landmarks.landmark[mp_hands.HandLandmark.THUMB_MCP]
+    thumb_pip = landmarks.landmark[mp_hands.HandLandmark.THUMB_PIP]
+    thumb_ip = landmarks.landmark[mp_hands.HandLandmark.THUMB_IP]
+    
+    index_tip = landmarks.landmark[mp_hands.HandLandmark.INDEX_FINGER_TIP]
+    index_mcp = landmarks.landmark[mp_hands.HandLandmark.INDEX_FINGER_MCP]
+    index_pip = landmarks.landmark[mp_hands.HandLandmark.INDEX_FINGER_PIP]
+    
+    middle_tip = landmarks.landmark[mp_hands.HandLandmark.MIDDLE_FINGER_TIP]
+    middle_mcp = landmarks.landmark[mp_hands.HandLandmark.MIDDLE_FINGER_MCP]
+    middle_pip = landmarks.landmark[mp_hands.HandLandmark.MIDDLE_FINGER_PIP]
+    
+    ring_tip = landmarks.landmark[mp_hands.HandLandmark.RING_FINGER_TIP]
+    ring_mcp = landmarks.landmark[mp_hands.HandLandmark.RING_FINGER_MCP]
+    ring_pip = landmarks.landmark[mp_hands.HandLandmark.RING_FINGER_PIP]
+    
+    pinky_tip = landmarks.landmark[mp_hands.HandLandmark.PINKY_TIP]
+    pinky_mcp = landmarks.landmark[mp_hands.HandLandmark.PINKY_MCP]
+    pinky_pip = landmarks.landmark[mp_hands.HandLandmark.PINKY_PIP]
+    
+    wrist = landmarks.landmark[mp_hands.HandLandmark.WRIST]
+
 # État global pour la confirmation et le debounce des gestes STATIQUES et SWIPES
-_gesture_candidate = None  # For static gestures
-_gesture_candidate_start_time = 0 # For static gestures
+
+# Variable qui stocke le geste actuellement en cours de validation
+# Contient le nom du geste détecté (ex: "THUMB_UP", "PEACE", "OPEN_HAND") 
+# ou None si aucun geste n'est en cours de confirmation
+# Sert à vérifier si le même geste est maintenu sur plusieurs frames consécutives
+_gesture_candidate = None
+
+# Timestamp (temps en secondes) du moment où le geste candidat a été détecté pour la première fois
+# Permet de mesurer combien de temps le geste a été maintenu de manière stable
+# Utilisé avec GESTURE_CONFIRMATION_DURATION pour confirmer qu'un geste est volontaire
+_gesture_candidate_start_time = 0
+
+# Stocke le dernier geste qui a été effectivement retourné/validé par la fonction
+# Permet d'éviter de renvoyer le même geste plusieurs fois de suite (système de debounce)
+# Contient le nom du geste (ex: "SWIPE_LEFT", "THUMB_UP") ou None
 _last_returned_gesture = None
+
+# Timestamp du moment où le dernier geste validé a été retourné
+# Utilisé avec GESTURE_DEBOUNCE_TIME pour empêcher la répétition trop rapide du même geste
+# Assure qu'il y a un délai minimum entre deux détections du même geste
 _last_returned_gesture_time = 0
 
-# Fonction utilitaire pour savoir si tous les doigts sont levés
-def is_hand_open(landmarks):
-    fingers = [
-        (mp_hands.HandLandmark.INDEX_FINGER_TIP, mp_hands.HandLandmark.INDEX_FINGER_MCP),
-        (mp_hands.HandLandmark.MIDDLE_FINGER_TIP, mp_hands.HandLandmark.MIDDLE_FINGER_MCP),
-        (mp_hands.HandLandmark.RING_FINGER_TIP, mp_hands.HandLandmark.RING_FINGER_MCP),
-        (mp_hands.HandLandmark.PINKY_TIP, mp_hands.HandLandmark.PINKY_MCP)
-    ]
-    thumb_tip = landmarks.landmark[mp_hands.HandLandmark.THUMB_TIP]
-    thumb_ip = landmarks.landmark[mp_hands.HandLandmark.THUMB_IP]
-    # wrist = landmarks.landmark[mp_hands.HandLandmark.WRIST] # Not directly used here
+# Fonction utilitaire pour détecter une main ouverte comme l'émoji ->🖐️ (tous les doigts étendus et écartés)
+def is_hand_open():
+    """Utilise les variables globales des landmarks pour détecter une main ouverte"""
     
-    # Critères plus souples pour une main ouverte
-    # Le pouce est ouvert si vers l'extérieur ou vers le haut
-    # thumb_open = (abs(thumb_tip.x - thumb_ip.x) > 0.05 or thumb_tip.y < thumb_ip.y) # This specific logic for thumb_open is not used for the general hand_open check
+    # List des doigts écartés
+    fingers_spread = []
+    # Liste des doigts étendus
+    fingers_extended = []
     
-    # Condition plus souple: la majorité des doigts doit être vers le haut
-    fingers_up_count = sum(1 for tip, mcp in fingers if landmarks.landmark[tip].y < landmarks.landmark[mcp].y)
-    most_fingers_up = fingers_up_count >= 3  # Au moins 3 doigts levés
+    # Vérifier que tous les doigts sont correctement étendus (progression MCP → PIP → TIP vers le haut)
+    # Pour chaque doigt: base (MCP) < milieu (PIP) < pointe (TIP) avec marges de sécurité
+    fingers_extended.append(
+        index_mcp.y < index_pip.y - 0.01 and  # Base < Milieu avec marge 1% de la taille de l'écran
+        index_pip.y < index_tip.y - 0.01 and  # Milieu < Pointe avec marge 1%
+        index_tip.y < index_mcp.y - 0.03      # Vérification globale: pointe bien au-dessus de la base (3%)
+    )
+    fingers_extended.append(
+        middle_mcp.y < middle_pip.y - 0.01 and
+        middle_pip.y < middle_tip.y - 0.01 and
+        middle_tip.y < middle_mcp.y - 0.03
+    )
+    fingers_extended.append(
+        ring_mcp.y < ring_pip.y - 0.01 and
+        ring_pip.y < ring_tip.y - 0.01 and
+        ring_tip.y < ring_mcp.y - 0.03
+    )
+    fingers_extended.append(
+        pinky_mcp.y < pinky_pip.y - 0.01 and
+        pinky_pip.y < pinky_tip.y - 0.01 and
+        pinky_tip.y < pinky_mcp.y - 0.03
+    )
     
-    return most_fingers_up
+    # Pour le pouce -> vérifier qu'il est écarté latéralement (distance horizontale du poignet)
+    # abs() = valeur absolue, supprime le signe négatif pour mesurer la distance pure sans prendre en compte l'agencement des doigts
+    thumb_spread = abs(thumb_tip.x - wrist.x) > 0.08  # Pouce écarté horizontalement
+
+    # Tous les doigts doivent être correctement étendus
+    all_fingers_extended = all(fingers_extended) and thumb_spread
+
+    return all_fingers_extended
 
 # Détection et traduction des gestes de la main
 def detect_gesture(landmarks):
-    """Détecte des gestes spécifiques basés sur la position des points de la main,
-    avec confirmation de durée pour les gestes statiques et debounce global."""
+    
     global _gesture_candidate, _gesture_candidate_start_time
     global _last_returned_gesture, _last_returned_gesture_time
-    # gesture_history is implicitly global when modified
+
+    # Initialiser les variables globales des landmarks
+    _extract_landmarks(landmarks)
 
     now = time.time()
-    raw_detected_gesture = None # The gesture identified in this frame before confirmation/debounce
+    raw_detected_gesture = None
+    #Geste brut/raw = un geste détecté qui n'a pas encore été confirmé (pas maintenu assez longtemps par exemple)
 
-    # Extraction des landmarks nécessaires
-    thumb_tip = landmarks.landmark[mp_hands.HandLandmark.THUMB_TIP]
-    thumb_ip = landmarks.landmark[mp_hands.HandLandmark.THUMB_IP]
-    index_tip = landmarks.landmark[mp_hands.HandLandmark.INDEX_FINGER_TIP]
-    index_mcp = landmarks.landmark[mp_hands.HandLandmark.INDEX_FINGER_MCP]
-    middle_tip = landmarks.landmark[mp_hands.HandLandmark.MIDDLE_FINGER_TIP]
-    middle_mcp = landmarks.landmark[mp_hands.HandLandmark.MIDDLE_FINGER_MCP]
-    ring_tip = landmarks.landmark[mp_hands.HandLandmark.RING_FINGER_TIP]
-    ring_mcp = landmarks.landmark[mp_hands.HandLandmark.RING_FINGER_MCP]
-    pinky_tip = landmarks.landmark[mp_hands.HandLandmark.PINKY_TIP]
-    pinky_mcp_lm = landmarks.landmark[mp_hands.HandLandmark.PINKY_MCP] # Renamed to avoid conflict with function parameter if any
-    wrist = landmarks.landmark[mp_hands.HandLandmark.WRIST]
-
-    # --- Détection de Geste Brut ---
-    # 1. Vérifier les gestes dynamiques (SWIPE) si la main est ouverte
-    if is_hand_open(landmarks):
-        palm_center_x = (wrist.x + index_mcp.x + pinky_mcp_lm.x) / 3
+    # Vérifier les gestes dynamiques (SWIPE) si la main est ouverte
+    if is_hand_open():
+        palm_center_x = (wrist.x + index_mcp.x + pinky_mcp.x) / 3
         gesture_history['swipe_x'].append(palm_center_x)
         gesture_history['swipe_t'].append(now)
         
@@ -119,14 +194,10 @@ def detect_gesture(landmarks):
             thumb_tip.y < pinky_tip.y
         )
         fingers_horizontal = (
-            abs(landmarks.landmark[mp_hands.HandLandmark.INDEX_FINGER_PIP].y - 
-                landmarks.landmark[mp_hands.HandLandmark.INDEX_FINGER_DIP].y) < 0.03 and
-            abs(landmarks.landmark[mp_hands.HandLandmark.MIDDLE_FINGER_PIP].y - 
-                landmarks.landmark[mp_hands.HandLandmark.MIDDLE_FINGER_DIP].y) < 0.03 and
-            abs(landmarks.landmark[mp_hands.HandLandmark.RING_FINGER_PIP].y - 
-                landmarks.landmark[mp_hands.HandLandmark.RING_FINGER_DIP].y) < 0.03 and
-            abs(landmarks.landmark[mp_hands.HandLandmark.PINKY_PIP].y - 
-                landmarks.landmark[mp_hands.HandLandmark.PINKY_DIP].y) < 0.03
+            abs(index_pip.y - landmarks.landmark[mp_hands.HandLandmark.INDEX_FINGER_DIP].y) < 0.03 and
+            abs(middle_pip.y - landmarks.landmark[mp_hands.HandLandmark.MIDDLE_FINGER_DIP].y) < 0.03 and
+            abs(ring_pip.y - landmarks.landmark[mp_hands.HandLandmark.RING_FINGER_DIP].y) < 0.03 and
+            abs(pinky_pip.y - landmarks.landmark[mp_hands.HandLandmark.PINKY_DIP].y) < 0.03
         )
         if thumb_vertical_degree and thumb_above_fingers and fingers_horizontal:
             raw_detected_gesture = "THUMB_UP"
@@ -135,7 +206,7 @@ def detect_gesture(landmarks):
             index_up = index_tip.y < index_mcp.y - 0.05
             middle_up = middle_tip.y < middle_mcp.y - 0.05
             ring_down = ring_tip.y > ring_mcp.y
-            pinky_down = pinky_tip.y > pinky_mcp_lm.y
+            pinky_down = pinky_tip.y > pinky_mcp.y
             
             fingers_v_shape = abs(index_tip.x - middle_tip.x) > 0.05
             
