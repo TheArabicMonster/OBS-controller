@@ -95,25 +95,25 @@ def is_hand_open():
     fingers_extended = []
     
     # Vérifier que tous les doigts sont correctement étendus (progression MCP → PIP → TIP vers le haut)
-    # Pour chaque doigt: base (MCP) < milieu (PIP) < pointe (TIP) avec marges de sécurité
+    # ATTENTION: En OpenCV, Y=0 est en haut, donc un doigt étendu vers le haut a Y décroissant
     fingers_extended.append(
-        index_mcp.y < index_pip.y - 0.01 and  # Base < Milieu avec marge 1% de la taille de l'écran
-        index_pip.y < index_tip.y - 0.01 and  # Milieu < Pointe avec marge 1%
+        index_tip.y < index_pip.y - 0.01 and  # Pointe plus haut que milieu
+        index_pip.y < index_mcp.y - 0.01 and  # Milieu plus haut que base
         index_tip.y < index_mcp.y - 0.03      # Vérification globale: pointe bien au-dessus de la base (3%)
     )
     fingers_extended.append(
-        middle_mcp.y < middle_pip.y - 0.01 and
-        middle_pip.y < middle_tip.y - 0.01 and
+        middle_tip.y < middle_pip.y - 0.01 and
+        middle_pip.y < middle_mcp.y - 0.01 and
         middle_tip.y < middle_mcp.y - 0.03
     )
     fingers_extended.append(
-        ring_mcp.y < ring_pip.y - 0.01 and
-        ring_pip.y < ring_tip.y - 0.01 and
+        ring_tip.y < ring_pip.y - 0.01 and
+        ring_pip.y < ring_mcp.y - 0.01 and
         ring_tip.y < ring_mcp.y - 0.03
     )
     fingers_extended.append(
-        pinky_mcp.y < pinky_pip.y - 0.01 and
-        pinky_pip.y < pinky_tip.y - 0.01 and
+        pinky_tip.y < pinky_pip.y - 0.01 and
+        pinky_pip.y < pinky_mcp.y - 0.01 and
         pinky_tip.y < pinky_mcp.y - 0.03
     )
     
@@ -123,6 +123,10 @@ def is_hand_open():
 
     # Tous les doigts doivent être correctement étendus
     all_fingers_extended = all(fingers_extended) and thumb_spread
+
+    # Debug: afficher le statut de détection de main ouverte
+    if all_fingers_extended:
+        print("✋ Main ouverte détectée")
 
     return all_fingers_extended
 
@@ -154,15 +158,16 @@ def detect_gesture(landmarks):
             dt = gesture_history['swipe_t'][-1] - gesture_history['swipe_t'][0]
             speed = abs(dx / dt) if dt > 0 else 0
             
-            # Conditions de swipe (vitesse et distance)
-            if dt < 1.0 and speed > 0.5: 
+            # Conditions de swipe (vitesse et distance) - Seuils assouplis
+            if dt < 1.5 and speed > 0.3:  # Plus de temps et vitesse réduite
                 current_swipe_gesture = None
-                if dx > 0.30:  # Droite vers gauche
+                if dx > 0.15:  # Distance réduite: 15% de l'écran (au lieu de 30%)
                     current_swipe_gesture = "SWIPE_LEFT"
-                elif dx < -0.30:  # Gauche vers droite
+                elif dx < -0.15:  # Distance réduite: 15% de l'écran
                     current_swipe_gesture = "SWIPE_RIGHT"
                 
                 if current_swipe_gesture:
+                    print(f"🔄 Swipe détecté: {current_swipe_gesture} (dx={dx:.2f}, speed={speed:.2f})")
                     gesture_history['swipe_x'].clear() # Clear history after detecting swipe
                     gesture_history['swipe_t'].clear()
                     _gesture_candidate = None # Reset static gesture candidate
@@ -174,6 +179,7 @@ def detect_gesture(landmarks):
                         _last_returned_gesture_time = now
                         return current_swipe_gesture
                     else:
+                        print(f"⏸️ Swipe en cooldown: {current_swipe_gesture}")
                         return None # Swipe detected but in debounce period
         
         # Si ce n'est pas un swipe actif, la main ouverte est un geste statique potentiel
