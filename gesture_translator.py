@@ -247,27 +247,38 @@ def detect_gesture(landmarks):
         if is_thumb_vertical and are_fingers_horizontal:
             raw_detected_gesture = "THUMB_UP"
         else:
-            # Critères pour PEACE (Signe de paix)
+            # Critères pour PEACE (Signe de paix) -> ✌️
+            # 1. Index et majeur étendus vers le haut
             is_index_up = index_tip.y < index_mcp.y - 0.05
             is_middle_up = middle_tip.y < middle_mcp.y - 0.05
+            
+            # 2. Annulaire et auriculaire repliés vers le bas
             is_ring_down = ring_tip.y > ring_mcp.y
             is_pinky_down = pinky_tip.y > pinky_mcp.y
             
+            # 3. Index et majeur doivent être écartés en forme de V
             is_fingers_v_shape = abs(index_tip.x - middle_tip.x) > 0.05
             
-            is_thumb_behind_line = False # Default
-            if abs(index_mcp.x - wrist.x) < 0.001: # Ligne verticale
+            # 4. Le pouce doit être caché derrière la ligne poignet-index
+            is_thumb_behind_line = False # Valeur par défaut
+            
+            # Calcul de la position du pouce par rapport à la ligne poignet-index
+            if abs(index_mcp.x - wrist.x) < 0.001: # Cas spécial: ligne verticale
                 line_x = index_mcp.x
                 is_thumb_behind_line = (thumb_ip.x < line_x) if wrist.x < index_mcp.x else (thumb_ip.x > line_x)
-            else: # Ligne non verticale
+            else: # Ligne non verticale standard
+                # Calcul de l'équation de la ligne y = mx + b
                 slope = (index_mcp.y - wrist.y) / (index_mcp.x - wrist.x)
                 intercept = wrist.y - slope * wrist.x
                 y_on_line = slope * thumb_ip.x + intercept
-                if index_mcp.x > wrist.x: # Main gauche probable (vue de face, la gauche anatomique est à droite)
+                
+                # Vérification selon l'orientation de la main
+                if index_mcp.x > wrist.x: # Main gauche probable (vue de face)
                     is_thumb_behind_line = thumb_ip.y > y_on_line 
                 else: # Main droite probable
                     is_thumb_behind_line = thumb_ip.y < y_on_line
             
+            # Si toutes les conditions sont remplies → PEACE détecté
             if (is_index_up and is_middle_up and is_ring_down and is_pinky_down and 
                 is_fingers_v_shape and is_thumb_behind_line):
                 raw_detected_gesture = "PEACE"
@@ -275,31 +286,40 @@ def detect_gesture(landmarks):
             # ... (Ajouter ici d'autres logiques de détection de gestes statiques bruts) ...
 
     # --- Logique de Confirmation et Debounce pour les gestes STATIQUES ---
+    # Cette section s'assure qu'un geste est vraiment intentionnel avant de le valider
+    # Elle évite les faux positifs dus à des mouvements accidentels ou des transitions rapides
+    
     if raw_detected_gesture: # Un geste statique potentiel a été détecté (OPEN_HAND, THUMB_UP, PEACE)
         if raw_detected_gesture == _gesture_candidate:
-            # Le même candidat de geste est maintenu
+            # Le même geste est maintenu → on continue le chronomètre de confirmation
+            # Il faut maintenir le geste pendant GESTURE_CONFIRMATION_DURATION secondes minimum
             if (now - _gesture_candidate_start_time >= config.GESTURE_CONFIRMATION_DURATION):
-                # Le geste est maintenu assez longtemps pour confirmation
-                # Vérifier maintenant le debounce par rapport au dernier geste *retourné*
-                if (raw_detected_gesture != _last_returned_gesture or \
+                # Le geste est maintenu assez longtemps → il est considéré comme intentionnel
+
+                # Maintenant on vérifie le système de debounce pour éviter les répétitions
+                # Soit c'est un nouveau geste, soit assez de temps s'est écoulé depuis le dernier
+                if (raw_detected_gesture != _last_returned_gesture or
                     now - _last_returned_gesture_time >= config.GESTURE_DEBOUNCE_TIME):
-                    
+                    # Le geste est officiellement validé et peut être retourné
                     _last_returned_gesture = raw_detected_gesture
                     _last_returned_gesture_time = now
-                    # Le geste est confirmé et retourné.
                     return raw_detected_gesture
-                # else: Geste confirmé par durée, mais en debounce car identique au dernier retourné récemment
-            # else: Geste maintenu, mais pas encore assez longtemps pour confirmation
+                else:
+                    print("Geste bloqué par le debounce")
+            else:
+                print("Geste maintenu, mais pas encore confirmé")
         else:
-            # Nouveau candidat de geste statique, ou différent du précédent
+            # Nouveau geste détecté (différent du précédent candidat)
+            # On démarre un nouveau chronomètre de confirmation pour ce geste
             _gesture_candidate = raw_detected_gesture
             _gesture_candidate_start_time = now
-            # Ne rien retourner ici, on commence juste à suivre ce nouveau candidat
+            # Pas de retour ici → on commence juste à suivre ce nouveau candidat
     else:
-        # Aucun geste statique brut détecté dans ce frame, réinitialiser le candidat
+        # Aucun geste statique détecté dans cette frame
+        # Réinitialiser le système de candidature (main en mouvement ou position non reconnue)
         _gesture_candidate = None
-        _gesture_candidate_start_time = 0 # Réinitialiser le temps de début
+        _gesture_candidate_start_time = 0
 
-    return None # Aucun geste (statique ou swipe) n'est confirmé et prêt à être retourné dans ce frame
+    return None # Aucun geste confirmé dans cette frame → continue à analyser
 
     # ... (Le "return None" à la fin de la fonction originale pour les gestes non reconnus est maintenant géré par le flux ci-dessus)
